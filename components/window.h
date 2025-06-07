@@ -7,7 +7,11 @@ typedef struct {
     int x, y;
     int width, height;
     int dragging;
+    int resizing;
+    int resize_dir; // 1 = right, 2 = bottom, 3 = corner
     int drag_offset_x, drag_offset_y;
+    int resize_offset_x, resize_offset_y;
+    int visible;
 } GUIWindow;
 
 void gui_window_init(GUIWindow *win, int x, int y, int w, int h);
