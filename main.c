@@ -1,74 +1,115 @@
 #define _POSIX_C_SOURCE 200112L
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "components/window.h"
+#include "components/icon.h"
 
-#define INTERNAL_WIDTH 640
-#define INTERNAL_HEIGHT 480
+/* ----- helpers ------------------------------------------------------ */
+static void append_front(GUIWindow **list, GUIWindow *w)
+{
+    /* detach */
+    GUIWindow *prev=NULL,*cur=*list;
+    while(cur && cur!=w){ prev=cur; cur=cur->next; }
+    if (!cur) return;                      /* not found */
 
-int main(void) {
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
-        return 1;
+    if (prev) prev->next = cur->next;      /* cut out */
+    else      *list      = cur->next;
+
+    /* append at END */
+    cur->next = NULL;
+    if (!*list) { *list = cur; }
+    else {
+        GUIWindow *p=*list; while(p->next) p=p->next; p->next=cur;
+    }
+}
+/* ------------------------------------------------------------------- */
+int main(void)
+{
+    if (SDL_Init(SDL_INIT_VIDEO)!=0 || TTF_Init()!=0){
+        fprintf(stderr,"SDL/TTF init failed\n"); return 1;
     }
 
-    SDL_DisplayMode display_mode;
-    if (SDL_GetCurrentDisplayMode(0, &display_mode) != 0) {
-        fprintf(stderr, "SDL_GetCurrentDisplayMode failed: %s\n", SDL_GetError());
-        SDL_Quit();
-        return 1;
-    }
+    SDL_Window *win=SDL_CreateWindow("SDL File Browser",
+                                     SDL_WINDOWPOS_CENTERED,
+                                     SDL_WINDOWPOS_CENTERED,
+                                     800,600, SDL_WINDOW_FULLSCREEN);
+    SDL_Renderer *ren=SDL_CreateRenderer(win,-1,SDL_RENDERER_ACCELERATED);
+    SDL_RenderSetLogicalSize(ren,640,480);
 
-    SDL_Window *window = SDL_CreateWindow("Draggable Window Fullscreen",
-                                          SDL_WINDOWPOS_CENTERED,
-                                          SDL_WINDOWPOS_CENTERED,
-                                          display_mode.w, display_mode.h,
-                                          SDL_WINDOW_FULLSCREEN);
-    if (!window) {
-        fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
-        SDL_Quit();
-        return 1;
-    }
+    TTF_Font *font=TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",12);
+    if(!font){ fprintf(stderr,"Font not found\n"); return 1; }
 
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (!renderer) {
-        fprintf(stderr, "SDL_CreateRenderer failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
+    /* desktop icons -------------------------------------------------- */
+    GUIIcon *desk_icons=NULL; int desk_cnt=0;
+    load_icons(".", &desk_icons, &desk_cnt);
 
-    // Keep internal 640x480 layout regardless of screen resolution
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1"); // Linear filtering
-    SDL_RenderSetLogicalSize(renderer, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+    /* window list (desktop has no window) ---------------------------- */
+    GUIWindow *windows=NULL;
 
-    GUIWindow gui;
-    gui_window_init(&gui, 100, 100, 300, 200);
+    int quit=0; SDL_Event e;
+    while(!quit){
+        while(SDL_PollEvent(&e)){
+            if(e.type==SDL_QUIT ||
+               (e.type==SDL_KEYDOWN && e.key.keysym.sym==SDLK_ESCAPE))
+                quit=1;
 
-    int quit = 0;
-    SDL_Event e;
-    while (!quit) {
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_QUIT ||
-                (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE)) {
-                quit = 1;
+            int handled=0;
+
+            /* pass to windows, top-most first (iterate tail→head) */
+            int n=0; for(GUIWindow *p=windows;p;p=p->next) ++n;
+            GUIWindow **stack = alloca(sizeof(GUIWindow*)*n);
+            int i=0; for(GUIWindow *p=windows;p;p=p->next) stack[i++]=p;
+
+            for(int k=n-1;k>=0 && !handled;--k){
+                if(gui_window_handle_event(stack[k],&e,&windows)){
+                    append_front(&windows, stack[k]);   /* raise */
+                    handled=1;
+                }
             }
 
-            gui_window_handle_event(&gui, &e);
+            /* desktop icons if not handled */
+            if(!handled && e.type==SDL_MOUSEBUTTONDOWN &&
+               e.button.button==SDL_BUTTON_LEFT){
+                for(int idx=0; idx<desk_cnt; ++idx){
+                    if (e.button.x >= desk_icons[idx].rect.x &&
+                        e.button.x <= desk_icons[idx].rect.x + desk_icons[idx].rect.w &&
+                        e.button.y >= desk_icons[idx].rect.y &&
+                        e.button.y <= desk_icons[idx].rect.y + desk_icons[idx].rect.h){
+                        handle_icon_click(&desk_icons[idx], ".", &windows);
+                        break;
+                    }
+                }
+            }
         }
 
-        SDL_SetRenderDrawColor(renderer, 30, 30, 30, 255);
-        SDL_RenderClear(renderer);
+        /* remove closed windows */
+        GUIWindow **pp=&windows;
+        while(*pp){
+            if(!(*pp)->visible){
+                GUIWindow *del=*pp; *pp=del->next; free(del);
+            } else pp=&(*pp)->next;
+        }
 
-        gui_window_draw(&gui, renderer);
+        /* ---------------- draw frame --------------------------------*/
+        SDL_SetRenderDrawColor(ren,20,20,20,255);
+        SDL_RenderClear(ren);
 
-        SDL_RenderPresent(renderer);
+        /* desktop icons */
+        for(int i=0;i<desk_cnt;++i)
+            draw_icon(ren,font,&desk_icons[i]);
+
+        /* windows (back→front) */
+        for(GUIWindow *p=windows;p;p=p->next)
+            gui_window_draw(p,ren,font);
+
+        SDL_RenderPresent(ren);
         SDL_Delay(16);
     }
 
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+    free(desk_icons);
+    SDL_DestroyRenderer(ren); SDL_DestroyWindow(win);
+    TTF_Quit(); SDL_Quit();
     return 0;
 }
