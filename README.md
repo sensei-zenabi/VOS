@@ -15,32 +15,31 @@ This project is a fully featured SDL2-based Linux terminal emulator with CRT-sty
 
 ### Prerequisites
 
-- CMake 3.16 or newer
-- A C++20 compiler (GCC, Clang, or MSVC)
+- A C++20 compiler (GCC or Clang recommended)
+- `pkg-config`
 - SDL2 development libraries
 - SDL2_ttf development libraries
 
 On Debian/Ubuntu you can install dependencies via:
 
 ```bash
-sudo apt-get install build-essential cmake libsdl2-dev libsdl2-ttf-dev
+sudo apt-get install build-essential pkg-config libsdl2-dev libsdl2-ttf-dev
 ```
 
-### Configure and Build
+### Build
 
 ```bash
-cmake -S . -B build
-cmake --build build
+make
 ```
 
 The resulting executable will be located at `build/cool_retro_terminal`.
 
 ## Running
 
-From the build directory:
+From the project root:
 
 ```bash
-./cool_retro_terminal
+make run
 ```
 
 The emulator will spawn your login shell inside a pseudo terminal. Keyboard input (including control sequences and arrow keys) is forwarded to the shell. Text is rendered using the first available monospace font from a set of common candidates. To force a specific font, set `CRT_FONT_PATH` to the path of a TTF font file before launching the application.
