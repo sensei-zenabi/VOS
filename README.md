@@ -1,2 +1,2 @@
 # VOS
-SDL based graphical OS.
+SDL based terminal that has CRT emulation.
